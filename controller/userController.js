@@ -1,70 +1,72 @@
 // backend/controllers/userController.js
-const asyncHandler = require('express-async-handler');
-const User = require('../models/Users');
-const jwt = require('jsonwebtoken');
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const User = require("../models/Users");
 
 // Register new user
-const registerUser = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body;
-  const userExists = await User.findOne({ email });
+const registerUser = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
 
-  if (userExists) {
-    res.status(400);
-    throw new Error('User already exists');
-  }
+    // Check if user exists
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      return res.status(400).json({ message: "User already exists" });
+    }
 
-  const user = await User.create({ name, email, password });
+    // Hash password before saving
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-  if (user) {
+    // Save user with hashed password
+    const user = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+    });
+
     res.status(201).json({
       _id: user._id,
       name: user.name,
       email: user.email,
-      token: generateToken(user._id), // Generate JWT
+      token: generateToken(user._id),
     });
-  } else {
-    res.status(400);
-    throw new Error('Invalid user data');
+  } catch (err) {
+    console.error("🔥 Register Error:", err);
+    res.status(500).json({ message: err.message });
   }
-});
+};
+
 
 // Login user
-// Login user
-const loginUser = asyncHandler(async (req, res) => {
-  console.log("📥 Incoming Login Body:", req.body);
+const loginUser = async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-  const { email, password } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
 
-  const user = await User.findOne({ email });
-  console.log("🔍 Found User:", user);
+    // Compare password directly
+    const isMatch = await bcrypt.compare(password, user.password);
 
-  if (!user) {
-    res.status(401);
-    throw new Error("User not found with this email");
-  }
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
 
-  // Check if matchPassword exists
-  if (!user.matchPassword) {
-    console.log("⚠️ matchPassword function missing!");
-    res.status(500);
-    throw new Error("matchPassword not implemented in User model");
-  }
-
-  const isMatch = await user.matchPassword(password);
-  console.log("🔑 Password Match:", isMatch);
-
-  if (isMatch) {
     res.json({
       _id: user._id,
       name: user.name,
       email: user.email,
       token: generateToken(user._id),
     });
-  } else {
-    res.status(401);
-    throw new Error("Invalid email or password");
+  } catch (err) {
+    console.error("🔥 Login Error:", err);
+    res.status(500).json({ message: err.message });
   }
-});
+};
+
 
 
 // Generate JWT token
